@@ -24,24 +24,66 @@ Claude AI → writes Facebook / Instagram / Twitter drafts
 
 ## Running locally (mock mode — no credentials needed)
 
+### 1. First-time setup
+
 ```bash
 cp .env.local.example .env.local   # leave all values blank
+npm run generate-icons              # creates public/icons/icon-192.png + icon-512.png
+```
+
+### 2. Start the dev server
+
+```bash
 npm run dev
 ```
 
-Open http://localhost:3000. The app runs entirely on mock data:
+Open [http://localhost:3000](http://localhost:3000) on your Mac. The app runs entirely on mock data:
 
 - **Matches** — 2025 pre-season friendlies + upcoming 2026 fixtures (East Kilbride, Ferguslie, West of Scotland, Milngavie)
 - **Photos** — placeholder images; swap for real Google Photos when credentials are set
 - **Summaries** — template-generated from the scorecard (no Claude API needed)
 - **Publish** — preview mode shows styled mock-ups; actual posting is disabled until social credentials are configured
 
-To test on your phone over Wi-Fi:
+---
+
+### Testing on your Android phone
+
+The dev server is already bound to all network interfaces (`-H 0.0.0.0`), so you have two options:
+
+#### Option A — localtunnel (over the internet, HTTPS)
+
+In a **second terminal**, run this **after** the dev server is already showing `Ready`:
 
 ```bash
-ipconfig getifaddr en0   # find your Mac's local IP
-# Open http://<ip>:3000 in Safari → Add to Home Screen
+npx localtunnel --port 3000 --subdomain mearnscc
 ```
+
+Open `https://mearnscc.loca.lt` on your Android.
+
+> **Tunnel password prompt:** localtunnel may show a "Tunnel Password" page. Find your public IP by running `curl ifconfig.me` on your Mac, then enter it on the prompt page and click Continue.
+
+> **Order matters:** always start `npm run dev` first. Starting the tunnel before the server causes a Bad Gateway error.
+
+#### Option B — USB cable (no internet needed, most reliable)
+
+1. Enable Developer Options on Android: Settings → About phone → tap **Build number** 7 times
+2. Go to Developer options → turn on **USB debugging** → accept the prompt on your phone
+3. Plug in the USB cable, then on your Mac:
+
+```bash
+brew install android-platform-tools
+adb devices                    # confirms your phone is detected
+adb reverse tcp:3000 tcp:3000  # forward phone's port → Mac
+```
+
+4. Open Chrome on Android and go to `http://localhost:3000`
+
+`localhost` is always treated as secure — no warnings, full PWA install works.
+
+#### Installing as a PWA
+
+- **Android Chrome:** tap ⋮ menu → Add to Home screen
+- The app icon appears on your home screen and opens without a browser bar
 
 ---
 

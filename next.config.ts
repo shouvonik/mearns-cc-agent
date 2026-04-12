@@ -9,6 +9,12 @@ const withPWA = require("next-pwa")({
 });
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: [
+    "mearnscc.loca.lt",
+    "*.loca.lt",
+    "*.ngrok-free.app",
+    "*.ngrok.io",
+  ],
   images: {
     remotePatterns: [
       {
