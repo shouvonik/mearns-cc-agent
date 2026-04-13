@@ -27,6 +27,9 @@ public/worker-*.js
 public/sw.js.map
 public/workbox-*.js.map
 
+# docs — large binary/reference files, regenerate locally
+docs/
+
 # misc
 .DS_Store
 *.pem
