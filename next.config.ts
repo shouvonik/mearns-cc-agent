@@ -10,6 +10,8 @@ const withPWA = require("next-pwa")({
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: [
+    "localhost",
+    "127.0.0.1",
     "mearnscc.loca.lt",
     "*.loca.lt",
     "*.ngrok-free.app",

@@ -4,6 +4,11 @@ A mobile-first PWA for Mearns Cricket Club that pulls match data from PlayHQ, pi
 
 ---
 
+# PlayHQ Organisation ID
+
+https://csc.playhq.com/org/da819f60-eb0b-41f3-8eb9-cbcfd6067590/my-organisation/overview
+---
+
 ## How it works
 
 ```
