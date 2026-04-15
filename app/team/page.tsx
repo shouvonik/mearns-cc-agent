@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { PLAYERS, type Player } from "@/lib/players";
 import { FIXTURES_2026, type Fixture } from "@/lib/fixtures-2026";
+import AppHeader from "@/components/AppHeader";
 
 // ── Date formatting (deterministic UTC — avoids SSR/client locale mismatch) ─
 
@@ -28,10 +29,167 @@ const LEVEL_LABELS: Record<number, string> = {
   4: "Emerging",
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Calendar helpers ──────────────────────────────────────────────────────
 
-function formatFixtureLabel(f: Fixture): string {
-  return `${fmtDayMon(f.date)} – vs ${f.opponent} (${f.homeAway}, ${f.competition})`;
+const FULL_MONTHS = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
+];
+const CAL_HEADERS = ["Mo","Tu","We","Th","Fr","Sa","Su"];
+
+function buildCalendarGrid(year: number, month: number): (string | null)[] {
+  // Returns YYYY-MM-DD strings (or null for empty cells), Mon-start grid
+  const firstDow = (new Date(Date.UTC(year, month, 1)).getUTCDay() + 6) % 7; // Mon=0
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const grid: (string | null)[] = Array(firstDow).fill(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    grid.push(`${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  }
+  while (grid.length % 7 !== 0) grid.push(null);
+  return grid;
+}
+
+// ── FixtureCalendar ────────────────────────────────────────────────────────
+
+function FixtureCalendar({
+  fixtures,
+  selectedFixtureId,
+  onSelect,
+}: {
+  fixtures: Fixture[];
+  selectedFixtureId: string;
+  onSelect: (id: string) => void;
+}) {
+  const todayUtc = new Date();
+  const todayStr = `${todayUtc.getFullYear()}-${String(todayUtc.getMonth() + 1).padStart(2, "0")}-${String(todayUtc.getDate()).padStart(2, "0")}`;
+
+  // Start calendar on the month of the first upcoming fixture (or today)
+  const initDate = fixtures[0]?.date
+    ? new Date(fixtures[0].date + "T12:00:00Z")
+    : todayUtc;
+  const [year, setYear] = useState(initDate.getUTCFullYear());
+  const [month, setMonth] = useState(initDate.getUTCMonth());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  const fixturesByDate = useMemo(() => {
+    const m = new Map<string, Fixture[]>();
+    for (const f of fixtures) {
+      if (!m.has(f.date)) m.set(f.date, []);
+      m.get(f.date)!.push(f);
+    }
+    return m;
+  }, [fixtures]);
+
+  const grid = useMemo(() => buildCalendarGrid(year, month), [year, month]);
+
+  const prevMonth = () => {
+    if (month === 0) { setYear((y) => y - 1); setMonth(11); }
+    else setMonth((m) => m - 1);
+    setSelectedDate(null);
+  };
+  const nextMonth = () => {
+    if (month === 11) { setYear((y) => y + 1); setMonth(0); }
+    else setMonth((m) => m + 1);
+    setSelectedDate(null);
+  };
+
+  const dateFixtures = selectedDate ? (fixturesByDate.get(selectedDate) ?? []) : [];
+
+  return (
+    <div className="space-y-3">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={prevMonth}
+          className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#111d50] border border-[#1e2f70] text-[#8fa8d8] hover:text-white text-lg leading-none transition-colors"
+        >‹</button>
+        <span className="text-white font-semibold text-sm">{FULL_MONTHS[month]} {year}</span>
+        <button
+          onClick={nextMonth}
+          className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#111d50] border border-[#1e2f70] text-[#8fa8d8] hover:text-white text-lg leading-none transition-colors"
+        >›</button>
+      </div>
+
+      {/* Weekday headers + day grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {CAL_HEADERS.map((h) => (
+          <div key={h} className="text-center text-[10px] font-semibold text-[#8fa8d8]/50 py-1">{h}</div>
+        ))}
+        {grid.map((dateStr, i) => {
+          if (!dateStr) return <div key={`e-${i}`} />;
+          const hasFixtures = fixturesByDate.has(dateStr);
+          const isSelected = dateStr === selectedDate;
+          const isToday = dateStr === todayStr;
+          const dayNum = Number(dateStr.slice(8));
+          return (
+            <button
+              key={dateStr}
+              onClick={() => hasFixtures && setSelectedDate(isSelected ? null : dateStr)}
+              disabled={!hasFixtures}
+              className={`relative flex flex-col items-center justify-center rounded-xl py-1.5 min-h-[36px] transition-all ${
+                isSelected
+                  ? "bg-yellow-400 text-[#080f2e]"
+                  : isToday
+                  ? "bg-[#111d50] border border-yellow-400/50 text-white"
+                  : hasFixtures
+                  ? "bg-[#111d50] border border-[#1e2f70] text-white hover:border-yellow-400/50 active:bg-yellow-400/10"
+                  : "text-[#8fa8d8]/25 cursor-default"
+              }`}
+            >
+              <span className="text-xs font-semibold leading-none">{dayNum}</span>
+              {hasFixtures && !isSelected && (
+                <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-yellow-400" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Fixtures for selected date */}
+      {selectedDate && (
+        <div className="space-y-2 pt-1">
+          {dateFixtures.length === 0 ? (
+            <p className="text-[#8fa8d8]/50 text-xs text-center py-3">No fixtures on this date.</p>
+          ) : (
+            dateFixtures.map((f) => {
+              const isActive = f.id === selectedFixtureId;
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => onSelect(isActive ? "none" : f.id)}
+                  className={`w-full text-left p-3 rounded-xl border transition-all ${
+                    isActive
+                      ? "bg-yellow-400/10 border-yellow-400/60"
+                      : "bg-[#111d50] border-[#1e2f70] hover:border-yellow-400/30"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <span className="text-white text-sm font-semibold leading-tight">vs {f.opponent}</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                      f.homeAway === "Home"
+                        ? "bg-green-600/30 text-green-400"
+                        : "bg-white/10 text-[#8fa8d8]"
+                    }`}>{f.homeAway}</span>
+                  </div>
+                  <p className="text-[#8fa8d8] text-xs">{f.competition} · {f.startTime} · {f.overs} ov</p>
+                  <p className="text-[#8fa8d8]/50 text-xs mt-0.5 truncate">{f.venue}</p>
+                  {isActive && (
+                    <p className="text-yellow-400 text-[10px] font-semibold mt-1.5">Selected for team sheet ✓</p>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {selectedFixtureId && selectedFixtureId !== "none" && !selectedDate && (
+        <p className="text-yellow-400/70 text-[10px] text-center">
+          Match selected · tap a date to change
+        </p>
+      )}
+    </div>
+  );
 }
 
 
@@ -53,37 +211,37 @@ function PlayerChip({
       onClick={onToggle}
       className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
         inXI
-          ? "bg-green-600/20 border-green-500/50"
+          ? "bg-yellow-400/20 border-yellow-400/50"
           : available
-          ? "bg-slate-800 border-slate-700 active:border-green-600"
-          : "bg-slate-900 border-slate-800 opacity-50"
+          ? "bg-[#111d50] border-[#1e2f70] active:border-yellow-400/50"
+          : "bg-[#080f2e]/60 border-[#1e2f70]/40"
       }`}
     >
       <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
-        inXI ? "bg-green-400" : available ? "bg-slate-400" : "bg-slate-700"
+        inXI ? "bg-yellow-400" : available ? "bg-[#8fa8d8]" : "bg-[#1e2f70]"
       }`} />
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-white text-sm font-medium truncate">{player.name}</span>
+          <span className={`text-sm font-medium truncate ${available || inXI ? "text-white" : "text-[#8fa8d8]"}`}>{player.name}</span>
           {player.isWicketkeeper && (
             <span className="text-amber-400 text-[10px] font-bold flex-shrink-0">WK</span>
           )}
           {player.isCaptain && (
-            <span className="text-yellow-300 text-[10px] font-bold flex-shrink-0">★C</span>
+            <span className="text-yellow-400 text-[10px] font-bold flex-shrink-0">★C</span>
           )}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${ROLE_COLORS[player.role]}`}>
             {player.role}
           </span>
-          <span className="text-slate-500 text-[10px]">
+          <span className="text-[#8fa8d8]/60 text-[10px]">
             Bat {player.battingRating} · Bowl {player.bowlingRating}
           </span>
         </div>
       </div>
 
-      <span className="text-[10px] text-slate-600 flex-shrink-0">
+      <span className="text-[10px] text-[#8fa8d8]/50 flex-shrink-0">
         {LEVEL_LABELS[player.teamLevel] ?? `L${player.teamLevel}`}
       </span>
     </button>
@@ -283,12 +441,12 @@ function XICard({
   };
 
   return (
-    <div className="bg-slate-800 rounded-2xl border border-green-500/40 overflow-hidden">
+    <div className="bg-[#111d50] rounded-2xl border border-[#1e2f70] overflow-hidden">
       {/* Header */}
-      <div className="px-4 pt-3 pb-0 border-b border-slate-700">
+      <div className="px-4 pt-3 pb-0 border-b border-[#1e2f70]">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-white font-bold text-sm">Suggested XI</h3>
-          <span className="text-[10px] text-slate-500">{xi.length} players</span>
+          <span className="text-[10px] text-[#8fa8d8]/60">{xi.length} players</span>
         </div>
         <div className="flex gap-0">
           {(["lineup", "image", "post"] as const).map((t) => (
@@ -297,8 +455,8 @@ function XICard({
               onClick={() => setTab(t)}
               className={`px-3 py-2 text-xs font-semibold border-b-2 transition-colors ${
                 tab === t
-                  ? "border-green-500 text-green-400"
-                  : "border-transparent text-slate-500 hover:text-slate-300"
+                  ? "border-yellow-400 text-yellow-400"
+                  : "border-transparent text-[#8fa8d8]/60 hover:text-[#8fa8d8]"
               }`}
             >
               {t === "lineup" ? "Lineup" : t === "image" ? "Team Sheet" : "Post"}
@@ -310,7 +468,7 @@ function XICard({
       {/* ── Lineup tab ── */}
       {tab === "lineup" && (
         <div>
-          <div className="px-4 py-2 bg-slate-900/50 flex gap-4 text-[10px] text-slate-500 font-semibold">
+          <div className="px-4 py-2 bg-[#080f2e]/60 flex gap-4 text-[10px] text-[#8fa8d8]/60 font-semibold">
             <span className="flex items-center gap-1">
               <span className="w-5 h-5 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 flex items-center justify-center font-bold">C</span>
               Tap to set Captain
@@ -320,13 +478,13 @@ function XICard({
               Tap to set Keeper
             </span>
           </div>
-          <div className="divide-y divide-slate-700/50">
+          <div className="divide-y divide-[#1e2f70]/60">
             {xi.map((p, i) => {
               const isC = p.id === captainId;
               const isWK = p.id === wkId;
               return (
                 <div key={p.id} className="flex items-center gap-2 px-4 py-2.5">
-                  <span className="text-slate-500 text-xs w-4 flex-shrink-0">{i + 1}.</span>
+                  <span className="text-[#8fa8d8]/60 text-xs w-4 flex-shrink-0">{i + 1}.</span>
                   <span className="text-white text-sm flex-1 truncate min-w-0">{p.name}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${ROLE_COLORS[p.role]}`}>
                     {p.role === "All-rounder" ? "AR" : p.role[0]}
@@ -336,8 +494,8 @@ function XICard({
                     title="Set as Captain"
                     className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-colors flex-shrink-0 ${
                       isC
-                        ? "bg-yellow-500 text-slate-900 border-yellow-400"
-                        : "bg-slate-700 text-slate-500 border-slate-600 hover:border-yellow-500/50 hover:text-yellow-400"
+                        ? "bg-yellow-400 text-[#080f2e] border-yellow-400"
+                        : "bg-[#080f2e] text-[#8fa8d8] border-[#1e2f70] hover:border-yellow-500/50 hover:text-yellow-400"
                     }`}
                   >C</button>
                   <button
@@ -345,14 +503,14 @@ function XICard({
                     title="Set as Wicketkeeper"
                     className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold border transition-colors flex-shrink-0 ${
                       isWK
-                        ? "bg-amber-500 text-slate-900 border-amber-400"
-                        : "bg-slate-700 text-slate-500 border-slate-600 hover:border-amber-500/50 hover:text-amber-400"
+                        ? "bg-amber-500 text-[#080f2e] border-amber-400"
+                        : "bg-[#080f2e] text-[#8fa8d8] border-[#1e2f70] hover:border-amber-500/50 hover:text-amber-400"
                     }`}
                   >WK</button>
                   <button
                     onClick={() => onRemove(p)}
                     title="Remove from XI"
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0 text-base"
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-[#8fa8d8]/40 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0 text-base"
                   >×</button>
                 </div>
               );
@@ -368,13 +526,13 @@ function XICard({
       <div className={tab === "image" ? "p-4 space-y-3" : "hidden"}>
         {dataUrl
           /* eslint-disable-next-line @next/next/no-img-element */
-          ? <img src={dataUrl} alt="Team sheet" className="w-full rounded-xl border border-slate-700" />
-          : <div className="w-full aspect-square bg-slate-900 rounded-xl border border-slate-700 flex items-center justify-center text-slate-600 text-xs">Generating…</div>
+          ? <img src={dataUrl} alt="Team sheet" className="w-full rounded-xl border border-[#1e2f70]" />
+          : <div className="w-full aspect-square bg-[#080f2e] rounded-xl border border-[#1e2f70] flex items-center justify-center text-[#8fa8d8]/40 text-xs">Generating…</div>
         }
         <button
           onClick={downloadImage}
           disabled={!dataUrl}
-          className="w-full py-2.5 rounded-xl text-sm font-semibold bg-green-600 hover:bg-green-500 text-white transition-colors disabled:opacity-40"
+          className="w-full py-2.5 rounded-xl text-sm font-semibold bg-yellow-400 hover:bg-yellow-300 text-[#080f2e] transition-colors disabled:opacity-40"
         >
           Download PNG
         </button>
@@ -386,24 +544,24 @@ function XICard({
           {/* Team sheet image preview — shared data URL from the hidden canvas */}
           {dataUrl
             ? /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={dataUrl} alt="Team sheet" className="w-full rounded-xl border border-slate-700" />
-            : <div className="w-full aspect-square bg-slate-900 rounded-xl border border-slate-700 flex items-center justify-center text-slate-600 text-xs">Loading image…</div>
+              <img src={dataUrl} alt="Team sheet" className="w-full rounded-xl border border-[#1e2f70]" />
+            : <div className="w-full aspect-square bg-[#080f2e] rounded-xl border border-[#1e2f70] flex items-center justify-center text-[#8fa8d8]/40 text-xs">Loading image…</div>
           }
 
           {/* One-line caption */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Caption</span>
+              <span className="text-[10px] text-[#8fa8d8]/60 font-semibold uppercase tracking-wide">Caption</span>
               <button
                 onClick={generate}
                 disabled={generating}
                 className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-colors ${
                   generating
-                    ? "bg-slate-700 text-slate-500 cursor-not-allowed"
-                    : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                    ? "bg-[#111d50] text-[#8fa8d8]/40 cursor-not-allowed"
+                    : "bg-yellow-400 hover:bg-yellow-300 text-[#080f2e]"
                 }`}
               >
-                {generating ? "Generating…" : "Generate with AI"}
+                {generating ? "Generating…" : "Generate Caption"}
               </button>
             </div>
             {generateError && (
@@ -414,7 +572,7 @@ function XICard({
               onChange={(e) => setCaption(e.target.value)}
               placeholder="Add a caption for your post…"
               rows={3}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-300 text-xs font-sans leading-relaxed resize-none focus:outline-none focus:border-green-500 placeholder:text-slate-600"
+              className="w-full bg-[#080f2e] border border-[#1e2f70] rounded-xl px-3 py-2.5 text-white text-xs font-sans leading-relaxed resize-none focus:outline-none focus:border-yellow-400/50 placeholder:text-[#8fa8d8]/40"
             />
           </div>
 
@@ -425,7 +583,7 @@ function XICard({
               const colors: Record<Platform, string> = {
                 facebook: "bg-blue-600 hover:bg-blue-500",
                 instagram: "bg-pink-600 hover:bg-pink-500",
-                twitter: "bg-slate-600 hover:bg-slate-500",
+                twitter: "bg-[#111d50] hover:bg-[#1e2f70] border border-[#1e2f70]",
               };
               const result = publishResult[p];
               return (
@@ -435,7 +593,7 @@ function XICard({
                     disabled={publishing === p || !caption.trim()}
                     className={`py-2 rounded-xl text-xs font-semibold text-white transition-colors ${
                       publishing === p || !caption.trim()
-                        ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                        ? "bg-[#080f2e] text-[#8fa8d8]/40 cursor-not-allowed border border-[#1e2f70]"
                         : colors[p]
                     }`}
                   >
@@ -460,7 +618,7 @@ function XICard({
 
 export default function TeamPage() {
   const upcomingFixtures = useMemo(
-    () => FIXTURES_2026.filter((f) => f.status === "upcoming").slice(0, 10),
+    () => FIXTURES_2026.filter((f) => f.status === "upcoming"),
     []
   );
 
@@ -468,6 +626,7 @@ export default function TeamPage() {
   const [availableIds, setAvailableIds] = useState<Set<string>>(new Set());
   const [levelFilter, setLevelFilter] = useState<number | "all">("all");
   const [roleFilter, setRoleFilter] = useState<"all" | "Batter" | "Bowler" | "All-rounder">("all");
+  const [playerSearch, setPlayerSearch] = useState("");
 
   // XI state
   const [xi, setXI] = useState<Player[] | null>(null);
@@ -485,12 +644,14 @@ export default function TeamPage() {
   );
 
   const filteredPlayers = useMemo(() => {
+    const q = playerSearch.trim().toLowerCase();
     return activePlayers.filter((p) => {
       if (levelFilter !== "all" && p.teamLevel !== levelFilter) return false;
       if (roleFilter !== "all" && p.role !== roleFilter) return false;
+      if (q && !p.name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [activePlayers, levelFilter, roleFilter]);
+  }, [activePlayers, levelFilter, roleFilter, playerSearch]);
 
   const xiIds = useMemo(() => new Set((xi ?? []).map((p) => p.id)), [xi]);
 
@@ -547,20 +708,7 @@ export default function TeamPage() {
 
   return (
     <div className="flex flex-col min-h-dvh">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4">
-        <div className="max-w-lg mx-auto py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-bold">MC</span>
-            </div>
-            <div>
-              <h1 className="text-white font-bold text-base leading-tight">Team Sheet</h1>
-              <p className="text-slate-400 text-xs">Mark available · Pick Final XI · Copy post</p>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="Team Sheet" subtitle="Mark available · Pick XI · Copy post" />
 
       <main className="flex-1 px-4 pb-32">
         <div className="max-w-lg mx-auto space-y-5 pt-4">
@@ -573,33 +721,26 @@ export default function TeamPage() {
             </div>
           )}
 
-          {/* 1. Match selector */}
-          <section>
-            <label className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2 block">
-              Match (optional)
-            </label>
-            <select
-              value={selectedFixtureId}
-              onChange={(e) => setSelectedFixtureId(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-green-500"
-            >
-              <option value="none">– Select upcoming match –</option>
-              {upcomingFixtures.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {formatFixtureLabel(f)}
-                </option>
-              ))}
-            </select>
+          {/* 1. Match selector — calendar */}
+          <section className="bg-[#111d50] rounded-2xl border border-[#1e2f70] p-4">
+            <p className="text-[#8fa8d8] text-xs font-semibold uppercase tracking-wide mb-3">
+              Select Match
+            </p>
+            <FixtureCalendar
+              fixtures={upcomingFixtures}
+              selectedFixtureId={selectedFixtureId}
+              onSelect={setSelectedFixtureId}
+            />
           </section>
 
           {/* 2. Player pool */}
           <section>
             <div className="flex items-center justify-between mb-3">
               <div>
-                <p className="text-slate-300 text-xs font-semibold uppercase tracking-wide">
+                <p className="text-white text-xs font-semibold uppercase tracking-wide">
                   Player Availability
                 </p>
-                <p className="text-slate-500 text-xs mt-0.5">
+                <p className="text-[#8fa8d8] text-xs mt-0.5">
                   {availableIds.size} marked available
                   {availableIds.size < 11 && (
                     <span className="text-amber-400 ml-1">
@@ -609,13 +750,33 @@ export default function TeamPage() {
                 </p>
               </div>
               <div className="flex gap-3">
-                <button onClick={selectAll} className="text-xs text-green-400 hover:text-green-300 font-medium">
+                <button onClick={selectAll} className="text-xs text-yellow-400 hover:text-yellow-300 font-medium">
                   All shown
                 </button>
-                <button onClick={clearAll} className="text-xs text-slate-500 hover:text-slate-300">
+                <button onClick={clearAll} className="text-xs text-[#8fa8d8] hover:text-white">
                   Clear
                 </button>
               </div>
+            </div>
+
+            {/* Player search */}
+            <div className="relative mb-3">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8fa8d8]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                type="text"
+                value={playerSearch}
+                onChange={(e) => setPlayerSearch(e.target.value)}
+                placeholder="Search players…"
+                className="w-full bg-[#111d50] border border-[#1e2f70] rounded-xl pl-9 pr-3 py-2 text-white text-sm focus:outline-none focus:border-yellow-400/50 placeholder:text-[#8fa8d8]/40"
+              />
+              {playerSearch && (
+                <button
+                  onClick={() => setPlayerSearch("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8fa8d8]/50 hover:text-white text-lg leading-none"
+                >×</button>
+              )}
             </div>
 
             {/* Level filter */}
@@ -624,8 +785,8 @@ export default function TeamPage() {
                 onClick={() => setLevelFilter("all")}
                 className={`text-xs px-3 py-1 rounded-full border transition-colors ${
                   levelFilter === "all"
-                    ? "bg-green-600 text-white border-green-600"
-                    : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                    ? "bg-yellow-400 text-[#080f2e] border-yellow-400"
+                    : "bg-[#111d50] text-[#8fa8d8] border-[#1e2f70] hover:text-white"
                 }`}
               >
                 All levels
@@ -636,8 +797,8 @@ export default function TeamPage() {
                   onClick={() => setLevelFilter(levelFilter === lvl ? "all" : lvl)}
                   className={`text-xs px-3 py-1 rounded-full border transition-colors ${
                     levelFilter === lvl
-                      ? "bg-green-600 text-white border-green-600"
-                      : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                      ? "bg-yellow-400 text-[#080f2e] border-yellow-400"
+                      : "bg-[#111d50] text-[#8fa8d8] border-[#1e2f70] hover:text-white"
                   }`}
                 >
                   {LEVEL_LABELS[lvl]}
@@ -653,8 +814,8 @@ export default function TeamPage() {
                   onClick={() => setRoleFilter(role)}
                   className={`text-xs px-3 py-1 rounded-full border transition-colors ${
                     roleFilter === role
-                      ? "bg-slate-200 text-slate-900 border-slate-200"
-                      : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                      ? "bg-yellow-400 text-[#080f2e] border-yellow-400"
+                      : "bg-[#111d50] text-[#8fa8d8] border-[#1e2f70] hover:text-white"
                   }`}
                 >
                   {role === "all" ? "All roles" : role}
@@ -701,8 +862,8 @@ export default function TeamPage() {
             disabled={!canSuggest}
             className={`w-full py-3.5 rounded-2xl text-sm font-bold shadow-xl transition-all ${
               canSuggest
-                ? "bg-green-600 hover:bg-green-500 active:bg-green-700 text-white"
-                : "bg-slate-800 text-slate-600 cursor-not-allowed"
+                ? "bg-yellow-400 hover:bg-yellow-300 active:bg-yellow-500 text-[#080f2e]"
+                : "bg-[#111d50] text-[#8fa8d8]/30 cursor-not-allowed border border-[#1e2f70]"
             }`}
           >
             {suggesting

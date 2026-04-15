@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import MatchCard from "@/components/MatchCard";
+import AppHeader from "@/components/AppHeader";
 import type { PlayHQGame } from "@/lib/playhq";
 import { getMearnsResult } from "@/lib/playhq";
 
@@ -88,20 +89,7 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col min-h-dvh">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4">
-        <div className="max-w-lg mx-auto py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-bold">MC</span>
-            </div>
-            <div>
-              <h1 className="text-white font-bold text-base leading-tight">Mearns CC</h1>
-              <p className="text-slate-400 text-xs">Match Summary Publisher</p>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="Mearns CC" subtitle="Club Assistant" />
 
       <main className="flex-1 px-4 pb-8">
         <div className="max-w-lg mx-auto">
@@ -111,16 +99,14 @@ export default function HomePage() {
               {/* Status tabs */}
               <div className="flex gap-2 items-center">
                 {(["upcoming", "all", "won", "lost"] as FilterStatus[]).map((f) => {
-                  const activeColor =
-                    f === "upcoming" ? "bg-blue-600 text-white" : "bg-green-600 text-white";
                   return (
                     <button
                       key={f}
                       onClick={() => handleStatusChange(f)}
                       className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors ${
                         filter === f
-                          ? activeColor
-                          : "bg-slate-800 text-slate-400 hover:text-slate-200"
+                          ? "bg-yellow-400 text-[#080f2e]"
+                          : "bg-[#111d50] text-[#8fa8d8] hover:text-white border border-[#1e2f70]"
                       }`}
                     >
                       {STATUS_LABELS[f]}
@@ -139,8 +125,8 @@ export default function HomePage() {
                     onClick={() => setCompetitionFilter("all")}
                     className={`flex-shrink-0 px-3 py-1 text-xs font-semibold rounded-full border transition-colors ${
                       competitionFilter === "all"
-                        ? "bg-slate-200 text-slate-900 border-slate-200"
-                        : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                        ? "bg-yellow-400 text-[#080f2e] border-yellow-400"
+                        : "bg-[#111d50] text-[#8fa8d8] border-[#1e2f70] hover:text-white"
                     }`}
                   >
                     All competitions
@@ -151,8 +137,8 @@ export default function HomePage() {
                       onClick={() => setCompetitionFilter(name)}
                       className={`flex-shrink-0 px-3 py-1 text-xs font-semibold rounded-full border transition-colors ${
                         competitionFilter === name
-                          ? "bg-slate-200 text-slate-900 border-slate-200"
-                          : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                          ? "bg-yellow-400 text-[#080f2e] border-yellow-400"
+                          : "bg-[#111d50] text-[#8fa8d8] border-[#1e2f70] hover:text-white"
                       }`}
                     >
                       {name}
