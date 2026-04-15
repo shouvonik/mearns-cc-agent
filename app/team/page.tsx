@@ -1,8 +1,17 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { PLAYERS, type Player } from "@/lib/players";
 import { FIXTURES_2026, type Fixture } from "@/lib/fixtures-2026";
+
+// ── Date formatting (deterministic UTC — avoids SSR/client locale mismatch) ─
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function fmtDayMon(dateStr: string) {
+  const d = new Date(dateStr + "T12:00:00Z");
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -22,31 +31,9 @@ const LEVEL_LABELS: Record<number, string> = {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function formatFixtureLabel(f: Fixture): string {
-  const d = new Date(f.date + "T12:00:00Z");
-  const ds = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  return `${ds} – vs ${f.opponent} (${f.homeAway}, ${f.competition})`;
+  return `${fmtDayMon(f.date)} – vs ${f.opponent} (${f.homeAway}, ${f.competition})`;
 }
 
-function buildTeamSheetPost(
-  xi: Player[],
-  captainId: string,
-  wkId: string,
-  fixture: Fixture | null
-): string {
-  const header = fixture
-    ? `📋 TEAM SHEET\n${formatFixtureLabel(fixture)}\n\n`
-    : "📋 TEAM SHEET\n\n";
-
-  const lines = xi.map((p, i) => {
-    const tags: string[] = [];
-    if (p.id === captainId) tags.push("(C)");
-    if (p.id === wkId) tags.push("(WK)");
-    const surname = p.name.split(" ").slice(1).join(" ");
-    return `${i + 1}. ${p.preferredName} ${surname}${tags.length ? " " + tags.join(" ") : ""}`;
-  });
-
-  return header + lines.join("\n") + "\n\n🏏 Up the Mearns! #MearnsCC";
-}
 
 // ── PlayerChip ─────────────────────────────────────────────────────────────
 
@@ -103,6 +90,107 @@ function PlayerChip({
   );
 }
 
+// Batting-order weights — defined once at module level, never recreated
+const BATTING_ORDER: Record<string, number> = { Batter: 0, "All-rounder": 2, Bowler: 3 };
+
+// ── Team Sheet Canvas ──────────────────────────────────────────────────────
+
+/**
+ * Renders the 1080×1080 template PNG with match details and player list
+ * overlaid at the correct pixel positions using the HTML5 Canvas API.
+ *
+ * Coordinate reference (all values in template pixels, 1080×1080):
+ *  - Header (dark blue):  y 0–215
+ *  - Match title:         centre x ~660, y ~90  (bold ~64px)
+ *  - Venue / date:        centre x ~660, y ~165 (22px)
+ *  - Middle section:      y 215–865
+ *  - League name:         rotated −90°, centre x ~75, y ~540
+ *  - Player list start:   x 215, y 272, spacing 57px (bold ~34px)
+ *  - Footer:              y 865–1080
+ */
+function useTeamSheetCanvas(
+  xi: Player[],
+  captainId: string,
+  wkId: string,
+  fixture: Fixture | null,
+) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [dataUrl, setDataUrl] = useState<string>("");
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const img = new Image();
+    img.src = "/template_team_sheet.png";
+    img.onload = () => {
+      canvas.width = img.naturalWidth;   // 1080
+      canvas.height = img.naturalHeight; // 1080
+
+      // 1. Draw template
+      ctx.drawImage(img, 0, 0);
+
+      // 2. Match title
+      const opponent = fixture?.opponent ?? "TBC";
+      ctx.save();
+      ctx.font = "bold 62px Arial, sans-serif";
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`Mearns vs ${opponent}`, 658, 90);
+      ctx.restore();
+
+      // 3. Venue / date / time
+      if (fixture) {
+        const sub = [fixture.venue, fmtDayMon(fixture.date), fixture.startTime].filter(Boolean).join("  |  ");
+        ctx.save();
+        ctx.font = "22px Arial, sans-serif";
+        ctx.fillStyle = "#e0e8ff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(sub, 658, 167);
+        ctx.restore();
+      }
+
+      // 4. League name (vertical, rotated −90°)
+      if (fixture?.competition) {
+        ctx.save();
+        ctx.translate(78, 540);
+        ctx.rotate(-Math.PI / 2);
+        ctx.font = "bold 36px Arial, sans-serif";
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(fixture.competition, 0, 0);
+        ctx.restore();
+      }
+
+      // 5. Player list
+      ctx.save();
+      ctx.font = "bold 34px Arial, sans-serif";
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      xi.forEach((p, i) => {
+        const tags: string[] = [];
+        if (p.id === captainId) tags.push("(C)");
+        if (p.id === wkId) tags.push("(WK)");
+        const displayName = p.preferredName + " " + p.name.split(" ").slice(1).join(" ");
+        const line = `${i + 1}. ${displayName}${tags.length ? " " + tags.join(" ") : ""}`;
+        ctx.fillText(line, 270, 272 + i * 57);
+      });
+      ctx.restore();
+
+      // Export to data URL so any tab can display it via <img>
+      setDataUrl(canvas.toDataURL("image/png"));
+    };
+  }, [xi, captainId, wkId, fixture]);
+
+  return { canvasRef, dataUrl };
+}
+
 // ── XICard ─────────────────────────────────────────────────────────────────
 
 function XICard({
@@ -122,16 +210,76 @@ function XICard({
   onSetWK: (id: string) => void;
   onRemove: (player: Player) => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const [tab, setTab] = useState<"lineup" | "post">("lineup");
+  const [tab, setTab] = useState<"lineup" | "image" | "post">("lineup");
 
-  const post = buildTeamSheetPost(xi, captainId, wkId, fixture);
+  // ── Team Sheet image ──
+  const { canvasRef, dataUrl } = useTeamSheetCanvas(xi, captainId, wkId, fixture);
+  const downloadImage = () => {
+    if (!dataUrl) return;
+    const link = document.createElement("a");
+    link.download = "mearns-cc-team-sheet.png";
+    link.href = dataUrl;
+    link.click();
+  };
 
-  const copy = () => {
-    navigator.clipboard.writeText(post).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+  // ── Post Preview ──
+  type Platform = "facebook" | "instagram" | "twitter";
+  const [caption, setCaption] = useState("");
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [publishing, setPublishing] = useState<Platform | null>(null);
+  const [publishResult, setPublishResult] = useState<Record<Platform, string | null>>({
+    facebook: null, instagram: null, twitter: null,
+  });
+
+  const generate = async () => {
+    setGenerating(true);
+    setGenerateError(null);
+    try {
+      const res = await fetch("/api/team/announce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xi, captainId, wicketkeeperId: wkId, fixture }),
+      });
+      const data = await res.json();
+      if (res.ok) setCaption(data.caption ?? "");
+      else setGenerateError(data.error ?? "Generation failed");
+    } catch {
+      setGenerateError("Could not reach server");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const publish = async (platform: Platform) => {
+    setPublishing(platform);
+    setPublishResult((r) => ({ ...r, [platform]: null }));
+    try {
+      const endpoints: Record<Platform, string> = {
+        facebook: "/api/publish/facebook",
+        instagram: "/api/publish/instagram",
+        twitter: "/api/publish/twitter",
+      };
+      const bodies: Record<Platform, object> = {
+        facebook: { message: caption },
+        instagram: { caption, imageUrls: [] },
+        twitter: { text: caption },
+      };
+      const res = await fetch(endpoints[platform], {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodies[platform]),
+      });
+      const data = await res.json();
+      setPublishResult((r) => ({
+        ...r,
+        [platform]: res.ok ? "Posted!" : (data.error ?? "Failed"),
+      }));
+    } catch {
+      setPublishResult((r) => ({ ...r, [platform]: "Failed" }));
+    } finally {
+      setPublishing(null);
+    }
   };
 
   return (
@@ -140,27 +288,26 @@ function XICard({
       <div className="px-4 pt-3 pb-0 border-b border-slate-700">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-white font-bold text-sm">Suggested XI</h3>
-          <span className="text-[10px] text-slate-500">
-            {xi.length} players
-          </span>
+          <span className="text-[10px] text-slate-500">{xi.length} players</span>
         </div>
         <div className="flex gap-0">
-          {(["lineup", "post"] as const).map((t) => (
+          {(["lineup", "image", "post"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors capitalize ${
+              className={`px-3 py-2 text-xs font-semibold border-b-2 transition-colors ${
                 tab === t
                   ? "border-green-500 text-green-400"
                   : "border-transparent text-slate-500 hover:text-slate-300"
               }`}
             >
-              {t === "lineup" ? "Lineup" : "Post Preview"}
+              {t === "lineup" ? "Lineup" : t === "image" ? "Team Sheet" : "Post"}
             </button>
           ))}
         </div>
       </div>
 
+      {/* ── Lineup tab ── */}
       {tab === "lineup" && (
         <div>
           <div className="px-4 py-2 bg-slate-900/50 flex gap-4 text-[10px] text-slate-500 font-semibold">
@@ -180,15 +327,10 @@ function XICard({
               return (
                 <div key={p.id} className="flex items-center gap-2 px-4 py-2.5">
                   <span className="text-slate-500 text-xs w-4 flex-shrink-0">{i + 1}.</span>
-
                   <span className="text-white text-sm flex-1 truncate min-w-0">{p.name}</span>
-
-                  {/* Role badge */}
                   <span className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${ROLE_COLORS[p.role]}`}>
                     {p.role === "All-rounder" ? "AR" : p.role[0]}
                   </span>
-
-                  {/* Captain toggle */}
                   <button
                     onClick={() => onSetCaptain(p.id)}
                     title="Set as Captain"
@@ -197,11 +339,7 @@ function XICard({
                         ? "bg-yellow-500 text-slate-900 border-yellow-400"
                         : "bg-slate-700 text-slate-500 border-slate-600 hover:border-yellow-500/50 hover:text-yellow-400"
                     }`}
-                  >
-                    C
-                  </button>
-
-                  {/* WK toggle */}
+                  >C</button>
                   <button
                     onClick={() => onSetWK(p.id)}
                     title="Set as Wicketkeeper"
@@ -210,18 +348,12 @@ function XICard({
                         ? "bg-amber-500 text-slate-900 border-amber-400"
                         : "bg-slate-700 text-slate-500 border-slate-600 hover:border-amber-500/50 hover:text-amber-400"
                     }`}
-                  >
-                    WK
-                  </button>
-
-                  {/* Remove */}
+                  >WK</button>
                   <button
                     onClick={() => onRemove(p)}
                     title="Remove from XI"
                     className="w-7 h-7 rounded-full flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0 text-base"
-                  >
-                    ×
-                  </button>
+                  >×</button>
                 </div>
               );
             })}
@@ -229,21 +361,95 @@ function XICard({
         </div>
       )}
 
+      {/* Hidden canvas — always mounted so useEffect can paint it */}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* ── Team Sheet image tab ── */}
+      <div className={tab === "image" ? "p-4 space-y-3" : "hidden"}>
+        {dataUrl
+          /* eslint-disable-next-line @next/next/no-img-element */
+          ? <img src={dataUrl} alt="Team sheet" className="w-full rounded-xl border border-slate-700" />
+          : <div className="w-full aspect-square bg-slate-900 rounded-xl border border-slate-700 flex items-center justify-center text-slate-600 text-xs">Generating…</div>
+        }
+        <button
+          onClick={downloadImage}
+          disabled={!dataUrl}
+          className="w-full py-2.5 rounded-xl text-sm font-semibold bg-green-600 hover:bg-green-500 text-white transition-colors disabled:opacity-40"
+        >
+          Download PNG
+        </button>
+      </div>
+
+      {/* ── Post Preview tab ── */}
       {tab === "post" && (
-        <div className="p-4">
-          <pre className="text-slate-300 text-xs whitespace-pre-wrap font-sans leading-relaxed bg-slate-900 rounded-xl p-4 mb-3">
-            {post}
-          </pre>
-          <button
-            onClick={copy}
-            className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-              copied
-                ? "bg-green-700 text-green-100"
-                : "bg-green-600 hover:bg-green-500 text-white"
-            }`}
-          >
-            {copied ? "Copied!" : "Copy Team Sheet"}
-          </button>
+        <div className="p-4 space-y-3">
+          {/* Team sheet image preview — shared data URL from the hidden canvas */}
+          {dataUrl
+            ? /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={dataUrl} alt="Team sheet" className="w-full rounded-xl border border-slate-700" />
+            : <div className="w-full aspect-square bg-slate-900 rounded-xl border border-slate-700 flex items-center justify-center text-slate-600 text-xs">Loading image…</div>
+          }
+
+          {/* One-line caption */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Caption</span>
+              <button
+                onClick={generate}
+                disabled={generating}
+                className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-colors ${
+                  generating
+                    ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                    : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                }`}
+              >
+                {generating ? "Generating…" : "Generate with AI"}
+              </button>
+            </div>
+            {generateError && (
+              <p className="text-[10px] text-red-400">{generateError}</p>
+            )}
+            <textarea
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              placeholder="Add a caption for your post…"
+              rows={3}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-300 text-xs font-sans leading-relaxed resize-none focus:outline-none focus:border-green-500 placeholder:text-slate-600"
+            />
+          </div>
+
+          {/* Publish buttons */}
+          <div className="grid grid-cols-3 gap-2">
+            {(["facebook", "instagram", "twitter"] as Platform[]).map((p) => {
+              const labels: Record<Platform, string> = { facebook: "Facebook", instagram: "Instagram", twitter: "X" };
+              const colors: Record<Platform, string> = {
+                facebook: "bg-blue-600 hover:bg-blue-500",
+                instagram: "bg-pink-600 hover:bg-pink-500",
+                twitter: "bg-slate-600 hover:bg-slate-500",
+              };
+              const result = publishResult[p];
+              return (
+                <div key={p} className="flex flex-col gap-1">
+                  <button
+                    onClick={() => publish(p)}
+                    disabled={publishing === p || !caption.trim()}
+                    className={`py-2 rounded-xl text-xs font-semibold text-white transition-colors ${
+                      publishing === p || !caption.trim()
+                        ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                        : colors[p]
+                    }`}
+                  >
+                    {publishing === p ? "…" : labels[p]}
+                  </button>
+                  {result && (
+                    <p className={`text-[10px] text-center font-semibold ${result === "Posted!" ? "text-green-400" : "text-red-400"}`}>
+                      {result}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -318,7 +524,12 @@ export default function TeamPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Suggestion failed");
-      setXI(data.xi);
+      const sorted = [...(data.xi as Player[])].sort((a, b) => {
+        const aOrder = a.isWicketkeeper ? 1 : (BATTING_ORDER[a.role] ?? 2);
+        const bOrder = b.isWicketkeeper ? 1 : (BATTING_ORDER[b.role] ?? 2);
+        return aOrder - bOrder;
+      });
+      setXI(sorted);
       setCaptainId(data.captain?.id ?? "");
       setWkId(data.wicketkeeper?.id ?? "");
     } catch (e) {
