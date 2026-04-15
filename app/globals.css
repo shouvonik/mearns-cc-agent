@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
+/* ── Mearns CC brand palette (sourced from team sheet template) ── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --mcc-navy:        #080f2e;   /* header / nav background */
+  --mcc-navy-light:  #111d50;   /* card surface */
+  --mcc-navy-border: #1e2f70;   /* borders */
+  --mcc-gold:        #f5c518;   /* logo sunburst accent */
+  --mcc-purple:      #3d1f6e;   /* gradient mid-tone */
+  --mcc-text-muted:  #8fa8d8;   /* secondary text */
+
+  --background: var(--mcc-navy);
+  --foreground: #ffffff;
 }
 
 @theme inline {
@@ -12,15 +20,8 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  background: var(--background);
+  background: var(--mcc-navy);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }

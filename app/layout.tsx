@@ -18,6 +18,10 @@ export const metadata: Metadata = {
   description:
     "Mearns Cricket Club match summary publisher — post to Facebook, Instagram & Twitter in seconds.",
   manifest: "/manifest.json",
+  icons: {
+    icon: [{ url: "/club-logo.jpg", type: "image/jpeg" }],
+    apple: [{ url: "/club-logo.jpg", type: "image/jpeg" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -32,7 +36,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#16a34a",
+  themeColor: "#080f2e",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -49,10 +53,8 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-      </head>
-      <body className="min-h-full bg-slate-900 text-slate-100 flex flex-col pb-16">
+
+      <body className="min-h-full bg-[#080f2e] text-white flex flex-col pb-16">
         {children}
         <BottomNav />
       </body>
