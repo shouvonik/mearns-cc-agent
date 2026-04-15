@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { postToFacebook, postWithPhotosToFacebook } from "@/lib/facebook";
 
 export async function POST(req: NextRequest) {
+  if (!process.env.FACEBOOK_PAGE_ID || !process.env.FACEBOOK_PAGE_ACCESS_TOKEN) {
+    return NextResponse.json({ error: "Facebook credentials are not configured" }, { status: 503 });
+  }
+
   try {
     const body = await req.json();
     const { message, photoUrls } = body as {

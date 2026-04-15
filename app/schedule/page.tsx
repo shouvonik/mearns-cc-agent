@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo } from "react";
 import { FIXTURES_2026, COMPETITION_GROUPS, type Fixture, type CompetitionGroup } from "@/lib/fixtures-2026";
 
 type GameTypeFilter = "all" | "weekend" | "midweek";
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+function fmtDate(dateStr: string) {
+  const d = new Date(dateStr + "T12:00:00Z");
+  return `${WEEKDAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
 
 const COMPETITION_COLORS: Record<string, string> = {
   "Premiership 2":    "bg-purple-500/20 text-purple-300 border-purple-500/30",
@@ -17,10 +25,9 @@ const COMPETITION_COLORS: Record<string, string> = {
   "Friendly":         "bg-slate-500/20 text-slate-300 border-slate-500/30",
 };
 
-function FixtureCard({ fixture }: { fixture: Fixture }) {
+const FixtureCard = memo(function FixtureCard({ fixture }: { fixture: Fixture }) {
   const color = COMPETITION_COLORS[fixture.competitionGroup] ?? "bg-slate-700 text-slate-300";
-  const date = new Date(fixture.date + "T12:00:00Z");
-  const dateStr = date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const dateStr = fmtDate(fixture.date);
 
   return (
     <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
@@ -54,7 +61,7 @@ function FixtureCard({ fixture }: { fixture: Fixture }) {
       )}
     </div>
   );
-}
+});
 
 // Group fixtures by month
 function groupByMonth(fixtures: Fixture[]): Map<string, Fixture[]> {
@@ -103,7 +110,7 @@ export default function SchedulePage() {
     ? competition
     : "all";
 
-  const grouped = groupByMonth(filtered);
+  const grouped = useMemo(() => groupByMonth(filtered), [filtered]);
 
   return (
     <div className="flex flex-col min-h-dvh">

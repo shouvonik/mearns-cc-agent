@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { postToInstagram } from "@/lib/instagram";
 
 export async function POST(req: NextRequest) {
+  if (!process.env.INSTAGRAM_ACCOUNT_ID || !process.env.FACEBOOK_PAGE_ACCESS_TOKEN) {
+    return NextResponse.json({ error: "Instagram credentials are not configured" }, { status: 503 });
+  }
+
   try {
     const body = await req.json();
     const { caption, imageUrls } = body as {

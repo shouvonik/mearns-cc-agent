@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { postTweet, postTweetWithImageUrls } from "@/lib/twitter";
 
 export async function POST(req: NextRequest) {
+  if (
+    !process.env.TWITTER_API_KEY ||
+    !process.env.TWITTER_API_SECRET ||
+    !process.env.TWITTER_ACCESS_TOKEN ||
+    !process.env.TWITTER_ACCESS_SECRET
+  ) {
+    return NextResponse.json({ error: "Twitter credentials are not configured" }, { status: 503 });
+  }
+
   try {
     const body = await req.json();
     const { text, imageUrls } = body as {
