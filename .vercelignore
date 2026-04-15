@@ -1,0 +1,8 @@
+# Source assets — not needed at runtime
+resources/
+
+# Generator scripts — run locally only
+scripts/
+
+# Dev docs
+docs/
